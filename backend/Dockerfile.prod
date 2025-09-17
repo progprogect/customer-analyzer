@@ -1,0 +1,63 @@
+# Production Dockerfile для Backend
+FROM node:18-alpine AS base
+
+# Устанавливаем системные зависимости
+RUN apk add --no-cache \
+    dumb-init \
+    && addgroup -g 1001 -S nodejs \
+    && adduser -S nodejs -u 1001
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Копируем package.json и package-lock.json
+COPY package*.json ./
+
+# Устанавливаем зависимости
+RUN npm ci --only=production && npm cache clean --force
+
+# Копируем исходный код
+COPY --chown=nodejs:nodejs . .
+
+# Собираем приложение
+RUN npm run build
+
+# Production stage
+FROM node:18-alpine AS production
+
+# Устанавливаем системные зависимости
+RUN apk add --no-cache \
+    dumb-init \
+    curl \
+    && addgroup -g 1001 -S nodejs \
+    && adduser -S nodejs -u 1001
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Копируем зависимости из base stage
+COPY --from=base --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=base --chown=nodejs:nodejs /app/dist ./dist
+COPY --from=base --chown=nodejs:nodejs /app/package*.json ./
+
+# Создаем директории для логов
+RUN mkdir -p /app/logs && chown -R nodejs:nodejs /app/logs
+
+# Настраиваем переменные окружения
+ENV NODE_ENV=production
+ENV PORT=3001
+ENV HOST=0.0.0.0
+
+# Открываем порт
+EXPOSE 3001
+
+# Добавляем health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3001/health || exit 1
+
+# Переключаемся на непривилегированного пользователя
+USER nodejs
+
+# Запускаем приложение
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "dist/index.js"]

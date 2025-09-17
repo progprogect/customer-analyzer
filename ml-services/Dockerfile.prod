@@ -1,0 +1,71 @@
+# Production Dockerfile для ML Services
+FROM python:3.9-slim AS base
+
+# Устанавливаем системные зависимости
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Создаем пользователя
+RUN groupadd -r mluser && useradd -r -g mluser mluser
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Копируем requirements.txt
+COPY requirements.txt .
+
+# Устанавливаем Python зависимости
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Копируем исходный код
+COPY --chown=mluser:mluser . .
+
+# Production stage
+FROM python:3.9-slim AS production
+
+# Устанавливаем системные зависимости
+RUN apt-get update && apt-get install -y \
+    curl \
+    dumb-init \
+    && rm -rf /var/lib/apt/lists/*
+
+# Создаем пользователя
+RUN groupadd -r mluser && useradd -r -g mluser mluser
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Копируем зависимости из base stage
+COPY --from=base /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
+COPY --from=base /usr/local/bin /usr/local/bin
+
+# Копируем исходный код
+COPY --chown=mluser:mluser . .
+
+# Создаем директории для логов и моделей
+RUN mkdir -p /app/logs /app/models /app/data && \
+    chown -R mluser:mluser /app/logs /app/models /app/data
+
+# Настраиваем переменные окружения
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PORT=8000
+ENV HOST=0.0.0.0
+
+# Открываем порт
+EXPOSE 8000
+
+# Добавляем health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Переключаемся на непривилегированного пользователя
+USER mluser
+
+# Запускаем приложение
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

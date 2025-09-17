@@ -1,0 +1,998 @@
+openapi: 3.0.3
+info:
+  title: Customer Analyzer ML Services API
+  description: |
+    ML Services API для системы Customer Analyzer.
+    
+    Сервис предоставляет REST API для:
+    - Сегментации пользователей с использованием ML моделей
+    - Прогнозирования покупок пользователей
+    - Прогнозирования оттока (churn) пользователей
+    - Управления ML моделями и их переобучения
+    
+    ## Аутентификация
+    
+    API использует API ключи для аутентификации. Передайте ключ в заголовке `X-API-Key`.
+    
+    ## Коды ответов
+    
+    - `200` - Успешный запрос
+    - `201` - Ресурс создан
+    - `400` - Некорректный запрос
+    - `401` - Не авторизован
+    - `404` - Ресурс не найден
+    - `429` - Превышен лимит запросов
+    - `500` - Внутренняя ошибка сервера
+    
+    ## Rate Limiting
+    
+    API ограничивает количество запросов:
+    - 1000 запросов в час для аутентифицированных пользователей
+    - 100 запросов в час для неаутентифицированных пользователей
+    
+  version: 1.0.0
+  contact:
+    name: Customer Analyzer ML Support
+    email: ml-support@customer-analyzer.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000/api
+    description: Development server
+  - url: https://ml-api.customer-analyzer.com/api
+    description: Production server
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  # Health endpoints
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Проверка здоровья ML сервисов
+      description: Возвращает статус здоровья всех ML сервисов
+      security: []
+      responses:
+        '200':
+          description: Все сервисы работают нормально
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                  services:
+                    type: object
+                    properties:
+                      segmentation:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            example: healthy
+                          model_version:
+                            type: string
+                            example: v1.0.0
+                          last_updated:
+                            type: string
+                            format: date-time
+                      purchase_prediction:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            example: healthy
+                          model_version:
+                            type: string
+                            example: v1.0.0
+                          last_updated:
+                            type: string
+                            format: date-time
+                      churn_prediction:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            example: healthy
+                          model_version:
+                            type: string
+                            example: v1.0.0
+                          last_updated:
+                            type: string
+                            format: date-time
+
+  # Segmentation endpoints
+  /segmentation/segments:
+    get:
+      tags:
+        - Segmentation
+      summary: Получение сегментов пользователей
+      description: Возвращает все сегменты пользователей с их характеристиками
+      parameters:
+        - name: include_metrics
+          in: query
+          description: Включать ли метрики качества модели
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Список сегментов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/SegmentationResult'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /segmentation/users/{user_id}:
+    get:
+      tags:
+        - Segmentation
+      summary: Получение сегмента пользователя
+      description: Возвращает сегмент конкретного пользователя
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: ID пользователя
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Сегмент пользователя
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user_id:
+                        type: integer
+                        example: 123
+                      segment_id:
+                        type: integer
+                        example: 2
+                      segment_name:
+                        type: string
+                        example: "Активные покупатели"
+                      confidence:
+                        type: number
+                        description: Уверенность в принадлежности к сегменту
+                        example: 0.85
+                      characteristics:
+                        type: object
+                        description: Характеристики сегмента
+                        additionalProperties: true
+                  timestamp:
+                    type: string
+                    format: date-time
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /segmentation/metrics:
+    get:
+      tags:
+        - Segmentation
+      summary: Получение метрик качества сегментации
+      description: Возвращает метрики качества модели сегментации
+      responses:
+        '200':
+          description: Метрики качества
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/SegmentationMetrics'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /segmentation/feature-importance:
+    get:
+      tags:
+        - Segmentation
+      summary: Получение важности признаков
+      description: Возвращает важность признаков для модели сегментации
+      responses:
+        '200':
+          description: Важность признаков
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    additionalProperties:
+                      type: number
+                    example:
+                      event_count: 0.85
+                      session_duration: 0.72
+                      days_since_registration: 0.68
+                      purchase_rate: 0.65
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  # Purchase Prediction endpoints
+  /purchase-prediction/predictions:
+    get:
+      tags:
+        - Purchase Prediction
+      summary: Получение прогнозов покупок
+      description: Возвращает прогнозы покупок для всех пользователей
+      parameters:
+        - name: min_probability
+          in: query
+          description: Минимальная вероятность покупки
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.1
+        - name: limit
+          in: query
+          description: Максимальное количество результатов
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: sort_by
+          in: query
+          description: Сортировка результатов
+          schema:
+            type: string
+            enum: [probability, confidence, user_id]
+            default: probability
+        - name: sort_order
+          in: query
+          description: Порядок сортировки
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: Список прогнозов покупок
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PurchasePrediction'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /purchase-prediction/users/{user_id}:
+    get:
+      tags:
+        - Purchase Prediction
+      summary: Получение прогноза покупки для пользователя
+      description: Возвращает прогноз покупки для конкретного пользователя
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: ID пользователя
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Прогноз покупки
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/PurchasePrediction'
+                  timestamp:
+                    type: string
+                    format: date-time
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /purchase-prediction/top-predictions:
+    get:
+      tags:
+        - Purchase Prediction
+      summary: Получение топ прогнозов покупок
+      description: Возвращает пользователей с наивысшей вероятностью покупки
+      parameters:
+        - name: limit
+          in: query
+          description: Количество результатов
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: min_confidence
+          in: query
+          description: Минимальная уверенность прогноза
+          schema:
+            type: string
+            enum: [low, medium, high]
+            default: medium
+      responses:
+        '200':
+          description: Топ прогнозы покупок
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PurchasePrediction'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /purchase-prediction/metrics:
+    get:
+      tags:
+        - Purchase Prediction
+      summary: Получение метрик качества модели
+      description: Возвращает метрики качества модели прогнозирования покупок
+      responses:
+        '200':
+          description: Метрики качества
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/ModelMetrics'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  # Churn Prediction endpoints
+  /churn-prediction/predictions:
+    get:
+      tags:
+        - Churn Prediction
+      summary: Получение прогнозов оттока
+      description: Возвращает прогнозы оттока для всех пользователей
+      parameters:
+        - name: min_probability
+          in: query
+          description: Минимальная вероятность оттока
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.1
+        - name: limit
+          in: query
+          description: Максимальное количество результатов
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: risk_level
+          in: query
+          description: Уровень риска
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+        - name: sort_by
+          in: query
+          description: Сортировка результатов
+          schema:
+            type: string
+            enum: [probability, confidence, user_id]
+            default: probability
+        - name: sort_order
+          in: query
+          description: Порядок сортировки
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: Список прогнозов оттока
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChurnPrediction'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /churn-prediction/users/{user_id}:
+    get:
+      tags:
+        - Churn Prediction
+      summary: Получение прогноза оттока для пользователя
+      description: Возвращает прогноз оттока для конкретного пользователя
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: ID пользователя
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Прогноз оттока
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/ChurnPrediction'
+                  timestamp:
+                    type: string
+                    format: date-time
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /churn-prediction/high-risk:
+    get:
+      tags:
+        - Churn Prediction
+      summary: Получение пользователей высокого риска оттока
+      description: Возвращает пользователей с высоким риском оттока
+      parameters:
+        - name: risk_threshold
+          in: query
+          description: Пороговое значение риска
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.7
+        - name: limit
+          in: query
+          description: Количество результатов
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Пользователи высокого риска
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChurnPrediction'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /churn-prediction/metrics:
+    get:
+      tags:
+        - Churn Prediction
+      summary: Получение метрик качества модели
+      description: Возвращает метрики качества модели прогнозирования оттока
+      responses:
+        '200':
+          description: Метрики качества
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/ModelMetrics'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  # Model Management endpoints
+  /retraining/status:
+    get:
+      tags:
+        - Model Management
+      summary: Получение статуса переобучения моделей
+      description: Возвращает текущий статус переобучения ML моделей
+      responses:
+        '200':
+          description: Статус переобучения
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        enum: [idle, running, completed, failed]
+                        example: idle
+                      progress:
+                        type: number
+                        description: Прогресс в процентах
+                        minimum: 0
+                        maximum: 100
+                        example: 0
+                      current_model:
+                        type: string
+                        description: Текущая переобучаемая модель
+                        example: "segmentation"
+                      started_at:
+                        type: string
+                        format: date-time
+                        description: Время начала переобучения
+                      estimated_completion:
+                        type: string
+                        format: date-time
+                        description: Предполагаемое время завершения
+                      last_completed:
+                        type: string
+                        format: date-time
+                        description: Время последнего завершения
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /retraining/retrain-all:
+    post:
+      tags:
+        - Model Management
+      summary: Запуск переобучения всех моделей
+      description: Запускает переобучение всех ML моделей
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force_retrain:
+                  type: boolean
+                  description: Принудительное переобучение даже если данные не изменились
+                  default: false
+                models:
+                  type: array
+                  description: Список моделей для переобучения
+                  items:
+                    type: string
+                    enum: [segmentation, purchase_prediction, churn_prediction]
+                  default: ["segmentation", "purchase_prediction", "churn_prediction"]
+      responses:
+        '202':
+          description: Переобучение запущено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Model retraining started"
+                  data:
+                    type: object
+                    properties:
+                      task_id:
+                        type: string
+                        description: ID задачи переобучения
+                        example: "retrain_20230115_143000"
+                      estimated_duration:
+                        type: integer
+                        description: Предполагаемая длительность в минутах
+                        example: 30
+                  timestamp:
+                    type: string
+                    format: date-time
+        '409':
+          description: Переобучение уже выполняется
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /retraining/history:
+    get:
+      tags:
+        - Model Management
+      summary: Получение истории переобучения
+      description: Возвращает историю переобучения ML моделей
+      parameters:
+        - name: limit
+          in: query
+          description: Количество записей
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: model
+          in: query
+          description: Фильтр по модели
+          schema:
+            type: string
+            enum: [segmentation, purchase_prediction, churn_prediction]
+      responses:
+        '200':
+          description: История переобучения
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RetrainingHistory'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API ключ для доступа к ML сервисам
+
+  schemas:
+    SegmentationResult:
+      type: object
+      properties:
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Segment'
+        user_segments:
+          type: object
+          description: Маппинг пользователей на сегменты
+          additionalProperties:
+            type: integer
+        model_metrics:
+          $ref: '#/components/schemas/SegmentationMetrics'
+        feature_importance:
+          type: object
+          description: Важность признаков
+          additionalProperties:
+            type: number
+        model_version:
+          type: string
+          description: Версия модели
+          example: "v1.0.0"
+        created_at:
+          type: string
+          format: date-time
+          description: Время создания модели
+
+    Segment:
+      type: object
+      properties:
+        segment_id:
+          type: integer
+          description: ID сегмента
+          example: 1
+        name:
+          type: string
+          description: Название сегмента
+          example: "Активные покупатели"
+        description:
+          type: string
+          description: Описание сегмента
+          example: "Пользователи с высокой активностью и регулярными покупками"
+        size:
+          type: integer
+          description: Размер сегмента
+          example: 1250
+        percentage:
+          type: number
+          description: Процент от общего числа пользователей
+          example: 35.5
+        characteristics:
+          type: object
+          description: Характеристики сегмента
+          additionalProperties: true
+          example:
+            avg_events_per_day: 5.2
+            avg_session_duration: 1200
+            avg_purchase_amount: 2500.0
+
+    SegmentationMetrics:
+      type: object
+      properties:
+        silhouette_score:
+          type: number
+          description: Silhouette Score (качество кластеризации)
+          minimum: -1
+          maximum: 1
+          example: 0.75
+        inertia:
+          type: number
+          description: Inertia (сумма квадратов расстояний)
+          example: 1234.56
+        calinski_harabasz_score:
+          type: number
+          description: Calinski-Harabasz Score
+          example: 245.78
+        davies_bouldin_score:
+          type: number
+          description: Davies-Bouldin Score (меньше лучше)
+          example: 0.45
+
+    PurchasePrediction:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          description: ID пользователя
+          example: 123
+        purchase_probability:
+          type: number
+          description: Вероятность покупки в ближайшие 30 дней
+          minimum: 0
+          maximum: 1
+          example: 0.85
+        prediction_confidence:
+          type: string
+          enum: [low, medium, high]
+          description: Уверенность в прогнозе
+          example: "high"
+        key_factors:
+          type: array
+          description: Ключевые факторы, влияющие на прогноз
+          items:
+            type: string
+          example: ["high_activity", "recent_views", "cart_abandonment"]
+        prediction_date:
+          type: string
+          format: date-time
+          description: Дата создания прогноза
+          example: "2023-01-15T14:30:00Z"
+        model_version:
+          type: string
+          description: Версия модели
+          example: "v1.0.0"
+
+    ChurnPrediction:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          description: ID пользователя
+          example: 123
+        churn_probability:
+          type: number
+          description: Вероятность оттока
+          minimum: 0
+          maximum: 1
+          example: 0.25
+        prediction_confidence:
+          type: string
+          enum: [low, medium, high]
+          description: Уверенность в прогнозе
+          example: "medium"
+        risk_level:
+          type: string
+          enum: [low, medium, high, critical]
+          description: Уровень риска оттока
+          example: "medium"
+        risk_factors:
+          type: array
+          description: Факторы риска
+          items:
+            type: string
+          example: ["low_activity", "no_recent_purchases"]
+        retention_recommendations:
+          type: array
+          description: Рекомендации по удержанию
+          items:
+            type: string
+          example: ["send_promotional_email", "personal_outreach"]
+        prediction_date:
+          type: string
+          format: date-time
+          description: Дата создания прогноза
+          example: "2023-01-15T14:30:00Z"
+        model_version:
+          type: string
+          description: Версия модели
+          example: "v1.0.0"
+
+    ModelMetrics:
+      type: object
+      properties:
+        accuracy:
+          type: number
+          description: Точность модели
+          minimum: 0
+          maximum: 1
+          example: 0.85
+        precision:
+          type: number
+          description: Точность (precision)
+          minimum: 0
+          maximum: 1
+          example: 0.82
+        recall:
+          type: number
+          description: Полнота (recall)
+          minimum: 0
+          maximum: 1
+          example: 0.88
+        f1_score:
+          type: number
+          description: F1 Score
+          minimum: 0
+          maximum: 1
+          example: 0.85
+        auc_roc:
+          type: number
+          description: AUC-ROC
+          minimum: 0
+          maximum: 1
+          example: 0.92
+        model_version:
+          type: string
+          description: Версия модели
+          example: "v1.0.0"
+        training_date:
+          type: string
+          format: date-time
+          description: Дата обучения модели
+          example: "2023-01-15T14:30:00Z"
+
+    RetrainingHistory:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID записи истории
+          example: "retrain_20230115_143000"
+        model_name:
+          type: string
+          enum: [segmentation, purchase_prediction, churn_prediction]
+          description: Название модели
+          example: "segmentation"
+        status:
+          type: string
+          enum: [completed, failed, cancelled]
+          description: Статус переобучения
+          example: "completed"
+        started_at:
+          type: string
+          format: date-time
+          description: Время начала
+          example: "2023-01-15T14:30:00Z"
+        completed_at:
+          type: string
+          format: date-time
+          description: Время завершения
+          example: "2023-01-15T15:00:00Z"
+        duration_minutes:
+          type: integer
+          description: Длительность в минутах
+          example: 30
+        metrics_before:
+          type: object
+          description: Метрики до переобучения
+          additionalProperties:
+            type: number
+        metrics_after:
+          type: object
+          description: Метрики после переобучения
+          additionalProperties:
+            type: number
+        error_message:
+          type: string
+          description: Сообщение об ошибке (если есть)
+          example: null
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Описание ошибки
+          example: "Model not found"
+        details:
+          type: object
+          description: Детали ошибки
+          additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+          description: Время возникновения ошибки

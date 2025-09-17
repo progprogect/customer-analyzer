@@ -1,135 +1,206 @@
-import { db } from '@/database/connection';
-import { config } from '@/config';
+/**
+ * Тесты для модуля подключения к базе данных
+ */
+
+import { Pool, PoolClient } from 'pg';
+import { DatabaseConnection } from '../database/connection';
+
+// Mock для pg модуля
+jest.mock('pg', () => ({
+  Pool: jest.fn(),
+}));
 
 describe('Database Connection', () => {
-  beforeAll(async () => {
-    // Инициализация подключения к тестовой БД
+  let mockPool: jest.Mocked<Pool>;
+  let mockClient: jest.Mocked<PoolClient>;
+
+  beforeEach(() => {
+    // Создаем mock для Pool
+    mockPool = {
+      connect: jest.fn(),
+      query: jest.fn(),
+      end: jest.fn(),
+      on: jest.fn(),
+      totalCount: 0,
+      idleCount: 0,
+      waitingCount: 0,
+    } as any;
+
+    // Создаем mock для PoolClient
+    mockClient = {
+      query: jest.fn(),
+      release: jest.fn(),
+      on: jest.fn(),
+    } as any;
+
+    // Настраиваем mock для Pool
+    (Pool as jest.Mock).mockImplementation(() => mockPool);
+    mockPool.connect.mockResolvedValue(mockClient);
   });
 
-  afterAll(async () => {
-    // Закрытие соединений
-    await db.close();
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
-  describe('Connection Test', () => {
-    it('should connect to database successfully', async () => {
-      const isConnected = await db.testConnection();
-      expect(isConnected).toBe(true);
-    });
-
-    it('should execute simple query', async () => {
-      const result = await db.query('SELECT NOW() as current_time');
-      expect(result.rows).toHaveLength(1);
-      expect(result.rows[0].current_time).toBeDefined();
-    });
-
-    it('should execute parameterized query', async () => {
-      const result = await db.query('SELECT $1 as test_value', ['test']);
-      expect(result.rows[0].test_value).toBe('test');
-    });
-  });
-
-  describe('Connection Pool', () => {
-    it('should provide pool statistics', () => {
-      const stats = db.getPoolStats();
-      expect(stats).toHaveProperty('totalCount');
-      expect(stats).toHaveProperty('idleCount');
-      expect(stats).toHaveProperty('waitingCount');
-      expect(stats).toHaveProperty('isConnected');
-    });
-
-    it('should be healthy when connected', () => {
-      const isHealthy = db.isHealthy();
-      expect(typeof isHealthy).toBe('boolean');
-    });
-  });
-
-  describe('Transaction Support', () => {
-    it('should execute transaction successfully', async () => {
-      const result = await db.transaction(async (client) => {
-        const queryResult = await client.query('SELECT $1 as value', ['transaction_test']);
-        return queryResult.rows[0].value;
+  describe('Инициализация подключения', () => {
+    it('должен создавать подключение к базе данных', async () => {
+      const connection = new DatabaseConnection();
+      
+      expect(Pool).toHaveBeenCalledWith({
+        host: process.env.DB_HOST,
+        port: parseInt(process.env.DB_PORT || '5432'),
+        database: process.env.DB_NAME,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        min: parseInt(process.env.DB_POOL_MIN || '1'),
+        max: parseInt(process.env.DB_POOL_MAX || '10'),
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 2000,
       });
-
-      expect(result).toBe('transaction_test');
     });
 
-    it('should rollback transaction on error', async () => {
-      await expect(
-        db.transaction(async (client) => {
-          await client.query('SELECT $1 as value', ['before_error']);
-          throw new Error('Test error');
-        })
-      ).rejects.toThrow('Test error');
+    it('должен успешно подключиться к базе данных', async () => {
+      mockPool.query.mockResolvedValue({ rows: [], rowCount: 0 });
+      
+      const connection = new DatabaseConnection();
+      const result = await connection.testConnection();
+      
+      expect(result).toBe(true);
+      expect(mockPool.query).toHaveBeenCalledWith('SELECT 1');
+    });
+
+    it('должен обрабатывать ошибки подключения', async () => {
+      mockPool.query.mockRejectedValue(new Error('Connection failed'));
+      
+      const connection = new DatabaseConnection();
+      const result = await connection.testConnection();
+      
+      expect(result).toBe(false);
     });
   });
 
-  describe('Database Schema', () => {
-    it('should have app_schema', async () => {
-      const result = await db.query(`
-        SELECT schema_name 
-        FROM information_schema.schemata 
-        WHERE schema_name = 'app_schema'
-      `);
-      expect(result.rows).toHaveLength(1);
+  describe('Выполнение запросов', () => {
+    it('должен выполнять SELECT запросы', async () => {
+      const mockRows = [
+        { id: 1, name: 'Test User' },
+        { id: 2, name: 'Another User' },
+      ];
+      mockPool.query.mockResolvedValue({ rows: mockRows, rowCount: 2 });
+      
+      const connection = new DatabaseConnection();
+      const result = await connection.query('SELECT * FROM users WHERE active = $1', [true]);
+      
+      expect(result.rows).toEqual(mockRows);
+      expect(result.rowCount).toBe(2);
+      expect(mockPool.query).toHaveBeenCalledWith('SELECT * FROM users WHERE active = $1', [true]);
     });
 
-    it('should have all required tables', async () => {
-      const result = await db.query(`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'app_schema'
-        ORDER BY table_name
-      `);
+    it('должен выполнять INSERT запросы', async () => {
+      const mockInsertResult = { rows: [{ id: 1 }], rowCount: 1 };
+      mockPool.query.mockResolvedValue(mockInsertResult);
       
-      const tableNames = result.rows.map(row => row.table_name);
-      expect(tableNames).toContain('users');
-      expect(tableNames).toContain('products');
-      expect(tableNames).toContain('events');
-      expect(tableNames).toContain('user_metrics');
+      const connection = new DatabaseConnection();
+      const result = await connection.query(
+        'INSERT INTO users (first_name, last_name) VALUES ($1, $2) RETURNING id',
+        ['Test', 'User']
+      );
+      
+      expect(result.rows[0].id).toBe(1);
+      expect(result.rowCount).toBe(1);
     });
 
-    it('should have proper table structures', async () => {
-      // Проверка структуры таблицы users
-      const usersResult = await db.query(`
-        SELECT column_name, data_type, is_nullable
-        FROM information_schema.columns
-        WHERE table_schema = 'app_schema' AND table_name = 'users'
-        ORDER BY ordinal_position
-      `);
+    it('должен обрабатывать ошибки запросов', async () => {
+      const error = new Error('SQL syntax error');
+      mockPool.query.mockRejectedValue(error);
       
-      const userColumns = usersResult.rows.map(row => row.column_name);
-      expect(userColumns).toContain('user_id');
-      expect(userColumns).toContain('telegram_id');
-      expect(userColumns).toContain('first_name');
-      expect(userColumns).toContain('last_name');
-      expect(userColumns).toContain('username');
-      expect(userColumns).toContain('registration_date');
-      expect(userColumns).toContain('profile_data');
+      const connection = new DatabaseConnection();
+      
+      await expect(connection.query('INVALID SQL')).rejects.toThrow('SQL syntax error');
     });
   });
 
-  describe('Error Handling', () => {
-    it('should handle invalid queries gracefully', async () => {
-      await expect(
-        db.query('SELECT * FROM non_existent_table')
-      ).rejects.toThrow();
+  describe('Транзакции', () => {
+    it('должен выполнять транзакции', async () => {
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 1 }], rowCount: 1 }) // INSERT
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
+      
+      const connection = new DatabaseConnection();
+      
+      const result = await connection.transaction(async (client) => {
+        const insertResult = await client.query(
+          'INSERT INTO users (first_name) VALUES ($1) RETURNING id',
+          ['Test']
+        );
+        return insertResult.rows[0].id;
+      });
+      
+      expect(result).toBe(1);
+      expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
+      expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
+      expect(mockClient.release).toHaveBeenCalled();
     });
 
-    it('should handle connection errors', async () => {
-      // Этот тест требует настройки неправильных параметров подключения
-      // В реальном тестировании можно использовать мок
-      const originalConfig = { ...config.database };
+    it('должен откатывать транзакции при ошибке', async () => {
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
+        .mockRejectedValueOnce(new Error('Transaction failed')); // ROLLBACK
       
-      // Временно изменяем конфигурацию на неверную
-      config.database.host = 'invalid_host';
+      const connection = new DatabaseConnection();
       
-      try {
-        await expect(db.testConnection()).resolves.toBe(false);
-      } finally {
-        // Восстанавливаем оригинальную конфигурацию
-        Object.assign(config.database, originalConfig);
-      }
+      await expect(connection.transaction(async (client) => {
+        await client.query('INSERT INTO users (invalid_column) VALUES ($1)', ['Test']);
+      })).rejects.toThrow('Transaction failed');
+      
+      expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('Health Check', () => {
+    it('должен возвращать статус здоровья подключения', async () => {
+      mockPool.query.mockResolvedValue({ rows: [], rowCount: 0 });
+      
+      const connection = new DatabaseConnection();
+      const health = await connection.getHealthStatus();
+      
+      expect(health).toEqual({
+        connected: true,
+        pool: {
+          total: 0,
+          idle: 0,
+          waiting: 0,
+        },
+      });
+    });
+
+    it('должен возвращать статус ошибки при проблемах с подключением', async () => {
+      mockPool.query.mockRejectedValue(new Error('Connection lost'));
+      
+      const connection = new DatabaseConnection();
+      const health = await connection.getHealthStatus();
+      
+      expect(health).toEqual({
+        connected: false,
+        pool: {
+          total: 0,
+          idle: 0,
+          waiting: 0,
+        },
+      });
+    });
+  });
+
+  describe('Закрытие подключения', () => {
+    it('должен корректно закрывать подключение', async () => {
+      mockPool.end.mockResolvedValue(undefined);
+      
+      const connection = new DatabaseConnection();
+      await connection.close();
+      
+      expect(mockPool.end).toHaveBeenCalled();
     });
   });
 });

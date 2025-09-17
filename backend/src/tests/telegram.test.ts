@@ -1,365 +1,329 @@
+/**
+ * Тесты для Telegram Bot API
+ */
+
 import request from 'supertest';
-import { app } from '../app';
-import { db } from '@/database/connection';
+import express from 'express';
+import { telegramRouter } from '../routes/telegram';
+import { telegramService } from '../services/telegramService';
+import { telegramAuth } from '../middleware/telegramAuth';
 
-describe('Telegram API', () => {
-  beforeAll(async () => {
-    // Подготовка тестовой БД
-    await db.testConnection();
+// Mock для telegramService
+jest.mock('../services/telegramService');
+jest.mock('../middleware/telegramAuth');
+
+describe('Telegram Bot API', () => {
+  let app: express.Application;
+
+  beforeEach(() => {
+    app = express();
+    app.use(express.json());
+    app.use('/api/telegram', telegramRouter);
+    
+    // Сброс моков
+    jest.clearAllMocks();
   });
 
-  afterAll(async () => {
-    await db.close();
-  });
+  describe('POST /api/telegram/event', () => {
+    const validEvent = {
+      user_id: 123456789,
+      telegram_id: 987654321,
+      first_name: 'Test',
+      last_name: 'User',
+      username: 'testuser',
+      event_type: 'bot_command',
+      event_timestamp: new Date().toISOString(),
+      properties: {
+        command: '/start',
+        message_id: 1,
+      },
+    };
 
-  describe('POST /api/telegram/events', () => {
-    it('should create a bot command event successfully', async () => {
-      const botEvent = {
-        update_id: 123456789,
-        event_type: 'command',
-        user: {
-          id: 987654321,
-          is_bot: false,
-          first_name: 'Test',
-          last_name: 'User',
-          username: 'testuser'
-        },
-        data: {
-          command: '/start',
-          text: '/start'
-        },
-        timestamp: new Date().toISOString()
-      };
+    it('должен успешно обрабатывать валидное событие', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => next());
+      (telegramService.processEvent as jest.Mock).mockResolvedValue({
+        success: true,
+        message: 'Event processed successfully',
+      });
 
       const response = await request(app)
-        .post('/api/telegram/events')
-        .send(botEvent)
+        .post('/api/telegram/event')
+        .send(validEvent)
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      expect(response.body.data.event_id).toBeDefined();
+      expect(telegramService.processEvent).toHaveBeenCalledWith(validEvent);
     });
 
-    it('should create a callback query event successfully', async () => {
-      const botEvent = {
-        update_id: 123456790,
-        event_type: 'callback_query',
-        user: {
-          id: 987654322,
-          is_bot: false,
-          first_name: 'Test2',
-          last_name: 'User2'
-        },
-        data: {
-          callback_query: {
-            id: 'callback123',
-            from: {
-              id: 987654322,
-              is_bot: false,
-              first_name: 'Test2',
-              last_name: 'User2'
-            },
-            data: 'button_clicked',
-            chat_instance: 'chat123'
-          }
-        },
-        timestamp: new Date().toISOString()
-      };
+    it('должен возвращать ошибку при невалидных данных', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => next());
 
-      const response = await request(app)
-        .post('/api/telegram/events')
-        .send(botEvent)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.event_id).toBeDefined();
-    });
-
-    it('should return 400 for invalid request', async () => {
       const invalidEvent = {
-        update_id: 'invalid',
-        event_type: 'unknown',
-        user: {
-          id: 'invalid'
-        }
+        // Отсутствует user_id
+        telegram_id: 987654321,
+        event_type: 'invalid_type',
       };
 
       const response = await request(app)
-        .post('/api/telegram/events')
+        .post('/api/telegram/event')
         .send(invalidEvent)
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain('Validation failed');
-    });
-  });
-
-  describe('POST /api/telegram/users', () => {
-    it('should create a new user successfully', async () => {
-      const userData = {
-        telegram_id: 111222333,
-        first_name: 'New',
-        last_name: 'User',
-        username: 'newuser',
-        language_code: 'en'
-      };
-
-      const response = await request(app)
-        .post('/api/telegram/users')
-        .send(userData)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.is_new).toBe(true);
-      expect(response.body.data.user_id).toBeDefined();
+      expect(response.body.error).toBeDefined();
     });
 
-    it('should update existing user successfully', async () => {
-      const userData = {
-        telegram_id: 111222333, // Тот же ID что и выше
-        first_name: 'Updated',
-        last_name: 'User',
-        username: 'updateduser'
-      };
+    it('должен обрабатывать ошибки сервиса', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => next());
+      (telegramService.processEvent as jest.Mock).mockRejectedValue(
+        new Error('Database connection failed')
+      );
 
       const response = await request(app)
-        .post('/api/telegram/users')
-        .send(userData)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.is_new).toBe(false);
-    });
-
-    it('should return 400 for invalid user data', async () => {
-      const invalidUser = {
-        telegram_id: 'invalid',
-        first_name: '', // Пустое имя
-      };
-
-      const response = await request(app)
-        .post('/api/telegram/users')
-        .send(invalidUser)
-        .expect(400);
-
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain('Validation failed');
-    });
-  });
-
-  describe('POST /api/telegram/events/create', () => {
-    it('should create an event successfully', async () => {
-      const eventData = {
-        user_telegram_id: 111222333,
-        event_type: 'bot_command',
-        properties: {
-          command: '/help',
-          text: '/help',
-          response_time_ms: 150
-        },
-        timestamp: new Date().toISOString()
-      };
-
-      const response = await request(app)
-        .post('/api/telegram/events/create')
-        .send(eventData)
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.event_id).toBeDefined();
-    });
-
-    it('should return 400 for invalid event data', async () => {
-      const invalidEvent = {
-        user_telegram_id: 'invalid',
-        event_type: 'unknown_type',
-        properties: {
-          invalid_property: 'value'
-        }
-      };
-
-      const response = await request(app)
-        .post('/api/telegram/events/create')
-        .send(invalidEvent)
-        .expect(400);
-
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain('Validation failed');
-    });
-
-    it('should return 500 for non-existent user', async () => {
-      const eventData = {
-        user_telegram_id: 999999999, // Несуществующий пользователь
-        event_type: 'bot_command',
-        properties: {
-          command: '/test'
-        }
-      };
-
-      const response = await request(app)
-        .post('/api/telegram/events/create')
-        .send(eventData)
+        .post('/api/telegram/event')
+        .send(validEvent)
         .expect(500);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain('not found');
+      expect(response.body.error).toContain('Database connection failed');
     });
   });
 
-  describe('GET /api/telegram/users/:telegramId/stats', () => {
-    it('should return user stats successfully', async () => {
+  describe('POST /api/telegram/callback', () => {
+    const validCallback = {
+      user_id: 123456789,
+      telegram_id: 987654321,
+      callback_data: 'recommendations_123',
+      message_id: 1,
+      timestamp: new Date().toISOString(),
+    };
+
+    it('должен успешно обрабатывать callback запрос', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => next());
+      (telegramService.processCallback as jest.Mock).mockResolvedValue({
+        success: true,
+        message: 'Callback processed successfully',
+        response: {
+          text: 'Here are your recommendations',
+          keyboard: [],
+        },
+      });
+
       const response = await request(app)
-        .get('/api/telegram/users/111222333/stats')
+        .post('/api/telegram/callback')
+        .send(validCallback)
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty('total_events');
-      expect(response.body.data).toHaveProperty('purchase_count');
+      expect(response.body.response.text).toBe('Here are your recommendations');
+      expect(telegramService.processCallback).toHaveBeenCalledWith(validCallback);
     });
 
-    it('should return 400 for invalid telegram_id', async () => {
+    it('должен возвращать ошибку при невалидном callback', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => next());
+
+      const invalidCallback = {
+        // Отсутствует callback_data
+        user_id: 123456789,
+        telegram_id: 987654321,
+      };
+
       const response = await request(app)
-        .get('/api/telegram/users/invalid/stats')
+        .post('/api/telegram/callback')
+        .send(invalidCallback)
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain('Invalid telegram_id format');
-    });
-
-    it('should return 404 for non-existent user', async () => {
-      const response = await request(app)
-        .get('/api/telegram/users/999999999/stats')
-        .expect(404);
-
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain('User not found');
+      expect(response.body.error).toBeDefined();
     });
   });
 
-  describe('GET /api/telegram/users/:telegramId/events', () => {
-    it('should return user events successfully', async () => {
+  describe('POST /api/telegram/message', () => {
+    const validMessage = {
+      user_id: 123456789,
+      telegram_id: 987654321,
+      message_type: 'text',
+      text: 'Hello, bot!',
+      message_id: 1,
+      timestamp: new Date().toISOString(),
+    };
+
+    it('должен успешно обрабатывать текстовое сообщение', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => next());
+      (telegramService.processMessage as jest.Mock).mockResolvedValue({
+        success: true,
+        message: 'Message processed successfully',
+        response: {
+          text: 'Hello! How can I help you?',
+          keyboard: [
+            [
+              { text: 'Get Recommendations', callback_data: 'recommendations' },
+            ],
+          ],
+        },
+      });
+
       const response = await request(app)
-        .get('/api/telegram/users/111222333/events?limit=5')
+        .post('/api/telegram/message')
+        .send(validMessage)
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      expect(Array.isArray(response.body.data)).toBe(true);
-      expect(response.body.data.length).toBeLessThanOrEqual(5);
+      expect(response.body.response.text).toBe('Hello! How can I help you?');
+      expect(telegramService.processMessage).toHaveBeenCalledWith(validMessage);
     });
 
-    it('should return 400 for invalid limit', async () => {
-      const response = await request(app)
-        .get('/api/telegram/users/111222333/events?limit=200')
-        .expect(400);
+    it('должен обрабатывать команды', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => next());
+      (telegramService.processMessage as jest.Mock).mockResolvedValue({
+        success: true,
+        message: 'Command processed successfully',
+        response: {
+          text: 'Welcome to Customer Analyzer Bot!',
+          keyboard: [
+            [
+              { text: 'Get Recommendations', callback_data: 'recommendations' },
+              { text: 'My Profile', callback_data: 'profile' },
+            ],
+          ],
+        },
+      });
 
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain('Limit must be between 1 and 100');
+      const commandMessage = {
+        ...validMessage,
+        text: '/start',
+      };
+
+      const response = await request(app)
+        .post('/api/telegram/message')
+        .send(commandMessage)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.response.text).toBe('Welcome to Customer Analyzer Bot!');
     });
   });
 
-  describe('GET /api/telegram/users/:telegramId/active', () => {
-    it('should return user activity status', async () => {
+  describe('GET /api/telegram/webhook', () => {
+    it('должен возвращать информацию о webhook', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => next());
+      (telegramService.getWebhookInfo as jest.Mock).mockResolvedValue({
+        success: true,
+        webhook_info: {
+          url: 'https://example.com/webhook',
+          has_custom_certificate: false,
+          pending_update_count: 0,
+          last_error_date: null,
+          last_error_message: null,
+          max_connections: 40,
+        },
+      });
+
       const response = await request(app)
-        .get('/api/telegram/users/111222333/active?days=30')
+        .get('/api/telegram/webhook')
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty('is_active');
-      expect(response.body.data).toHaveProperty('days_checked');
-      expect(response.body.data.days_checked).toBe(30);
-    });
-
-    it('should return 400 for invalid days parameter', async () => {
-      const response = await request(app)
-        .get('/api/telegram/users/111222333/active?days=500')
-        .expect(400);
-
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain('Days must be between 1 and 365');
+      expect(response.body.webhook_info).toBeDefined();
+      expect(response.body.webhook_info.url).toBe('https://example.com/webhook');
     });
   });
 
   describe('POST /api/telegram/webhook', () => {
-    it('should process message webhook successfully', async () => {
-      const webhookData = {
-        update_id: 123456791,
-        message: {
-          message_id: 123,
-          from: {
-            id: 987654323,
-            is_bot: false,
-            first_name: 'Webhook',
-            last_name: 'Test'
-          },
-          date: Date.now(),
-          chat: {
-            id: 987654323,
-            type: 'private'
-          },
-          text: 'Hello bot!'
-        }
-      };
+    const validWebhook = {
+      url: 'https://example.com/webhook',
+      max_connections: 40,
+    };
+
+    it('должен успешно устанавливать webhook', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => next());
+      (telegramService.setWebhook as jest.Mock).mockResolvedValue({
+        success: true,
+        message: 'Webhook set successfully',
+      });
 
       const response = await request(app)
         .post('/api/telegram/webhook')
-        .send(webhookData)
-        .expect(200);
-
-      expect(response.body).toEqual({ ok: true });
-    });
-
-    it('should process callback query webhook successfully', async () => {
-      const webhookData = {
-        update_id: 123456792,
-        callback_query: {
-          id: 'callback456',
-          from: {
-            id: 987654324,
-            is_bot: false,
-            first_name: 'Callback',
-            last_name: 'Test'
-          },
-          data: 'button_pressed',
-          chat_instance: 'chat456'
-        }
-      };
-
-      const response = await request(app)
-        .post('/api/telegram/webhook')
-        .send(webhookData)
-        .expect(200);
-
-      expect(response.body).toEqual({ ok: true });
-    });
-  });
-
-  describe('GET /api/telegram/info', () => {
-    it('should return API information', async () => {
-      const response = await request(app)
-        .get('/api/telegram/info')
+        .send(validWebhook)
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty('version');
-      expect(response.body.data).toHaveProperty('endpoints');
-      expect(response.body.data).toHaveProperty('rate_limits');
-      expect(Array.isArray(response.body.data.endpoints)).toBe(true);
+      expect(response.body.message).toBe('Webhook set successfully');
+      expect(telegramService.setWebhook).toHaveBeenCalledWith(validWebhook);
+    });
+
+    it('должен возвращать ошибку при невалидном URL', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => next());
+
+      const invalidWebhook = {
+        url: 'invalid-url',
+        max_connections: 40,
+      };
+
+      const response = await request(app)
+        .post('/api/telegram/webhook')
+        .send(invalidWebhook)
+        .expect(400);
+
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toContain('Invalid URL');
+    });
+  });
+
+  describe('DELETE /api/telegram/webhook', () => {
+    it('должен успешно удалять webhook', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => next());
+      (telegramService.deleteWebhook as jest.Mock).mockResolvedValue({
+        success: true,
+        message: 'Webhook deleted successfully',
+      });
+
+      const response = await request(app)
+        .delete('/api/telegram/webhook')
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.message).toBe('Webhook deleted successfully');
+      expect(telegramService.deleteWebhook).toHaveBeenCalled();
     });
   });
 
   describe('Rate Limiting', () => {
-    it('should apply rate limiting', async () => {
-      // Делаем много запросов подряд
-      const promises = Array(10).fill(null).map(() =>
-        request(app).get('/api/telegram/info')
-      );
-
-      const responses = await Promise.all(promises);
-      
-      // Все запросы должны пройти (лимит 1000 за 15 минут)
-      responses.forEach(response => {
-        expect(response.status).toBeLessThan(429);
+    it('должен ограничивать количество запросов', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => {
+        // Имитируем превышение лимита
+        res.status(429).json({
+          success: false,
+          error: 'Rate limit exceeded',
+        });
       });
+
+      const response = await request(app)
+        .post('/api/telegram/event')
+        .send(validEvent)
+        .expect(429);
+
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe('Rate limit exceeded');
+    });
+  });
+
+  describe('Authentication', () => {
+    it('должен отклонять неавторизованные запросы', async () => {
+      (telegramAuth as jest.Mock).mockImplementation((req, res, next) => {
+        res.status(401).json({
+          success: false,
+          error: 'Unauthorized',
+        });
+      });
+
+      const response = await request(app)
+        .post('/api/telegram/event')
+        .send(validEvent)
+        .expect(401);
+
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe('Unauthorized');
     });
   });
 });

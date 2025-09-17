@@ -1,0 +1,907 @@
+openapi: 3.0.3
+info:
+  title: Customer Analyzer Backend API
+  description: |
+    Backend API для системы Customer Analyzer.
+    
+    Система предоставляет REST API для:
+    - Управления пользователями и событиями
+    - Интеграции с Telegram Bot
+    - Получения аналитических данных
+    - Мониторинга состояния системы
+    
+    ## Аутентификация
+    
+    API использует JWT токены для аутентификации. Получите токен через эндпоинт `/auth/login`.
+    
+    ## Коды ответов
+    
+    - `200` - Успешный запрос
+    - `201` - Ресурс создан
+    - `400` - Некорректный запрос
+    - `401` - Не авторизован
+    - `403` - Доступ запрещен
+    - `404` - Ресурс не найден
+    - `429` - Превышен лимит запросов
+    - `500` - Внутренняя ошибка сервера
+    
+    ## Rate Limiting
+    
+    API ограничивает количество запросов:
+    - 100 запросов в минуту для аутентифицированных пользователей
+    - 10 запросов в минуту для неаутентифицированных пользователей
+    
+  version: 1.0.0
+  contact:
+    name: Customer Analyzer Support
+    email: support@customer-analyzer.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3001/api
+    description: Development server
+  - url: https://api.customer-analyzer.com
+    description: Production server
+
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
+
+paths:
+  # Health endpoints
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Проверка здоровья сервиса
+      description: Возвращает статус здоровья Backend сервиса
+      security: []
+      responses:
+        '200':
+          description: Сервис работает нормально
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                  uptime:
+                    type: number
+                    description: Время работы в секундах
+                  version:
+                    type: string
+                    example: 1.0.0
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # Authentication endpoints
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Аутентификация пользователя
+      description: Получение JWT токена для доступа к API
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - telegram_id
+                - username
+              properties:
+                telegram_id:
+                  type: integer
+                  description: Telegram ID пользователя
+                  example: 123456789
+                username:
+                  type: string
+                  description: Имя пользователя Telegram
+                  example: "john_doe"
+                first_name:
+                  type: string
+                  description: Имя пользователя
+                  example: "John"
+                last_name:
+                  type: string
+                  description: Фамилия пользователя
+                  example: "Doe"
+      responses:
+        '200':
+          description: Успешная аутентификация
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                        description: JWT токен
+                      user:
+                        $ref: '#/components/schemas/User'
+                  timestamp:
+                    type: string
+                    format: date-time
+        '400':
+          description: Некорректные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # User management endpoints
+  /users:
+    get:
+      tags:
+        - Users
+      summary: Получение списка пользователей
+      description: Возвращает список пользователей с пагинацией
+      parameters:
+        - name: page
+          in: query
+          description: Номер страницы
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Количество элементов на странице
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: search
+          in: query
+          description: Поиск по имени или username
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Список пользователей
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      users:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/User'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+    post:
+      tags:
+        - Users
+      summary: Создание нового пользователя
+      description: Создает нового пользователя в системе
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: Пользователь создан
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/User'
+                  timestamp:
+                    type: string
+                    format: date-time
+        '400':
+          description: Некорректные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/{user_id}:
+    get:
+      tags:
+        - Users
+      summary: Получение пользователя по ID
+      description: Возвращает информацию о конкретном пользователе
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: ID пользователя
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Информация о пользователе
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/User'
+                  timestamp:
+                    type: string
+                    format: date-time
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Users
+      summary: Обновление пользователя
+      description: Обновляет информацию о пользователе
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: ID пользователя
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: Пользователь обновлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/User'
+                  timestamp:
+                    type: string
+                    format: date-time
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # Event management endpoints
+  /events:
+    get:
+      tags:
+        - Events
+      summary: Получение списка событий
+      description: Возвращает список событий с фильтрацией и пагинацией
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: user_id
+          in: query
+          description: Фильтр по пользователю
+          schema:
+            type: integer
+        - name: event_type
+          in: query
+          description: Фильтр по типу события
+          schema:
+            type: string
+            enum: [view, purchase, add_to_cart, remove_from_cart, search, bot_command]
+        - name: start_date
+          in: query
+          description: Начальная дата (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          description: Конечная дата (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Список событий
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      events:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Event'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+    post:
+      tags:
+        - Events
+      summary: Создание нового события
+      description: Создает новое событие в системе
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEventRequest'
+      responses:
+        '201':
+          description: Событие создано
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Event'
+                  timestamp:
+                    type: string
+                    format: date-time
+        '400':
+          description: Некорректные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # Telegram Bot endpoints
+  /telegram/event:
+    post:
+      tags:
+        - Telegram
+      summary: Обработка события Telegram Bot
+      description: Обрабатывает события, поступающие от Telegram Bot
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramEvent'
+      responses:
+        '200':
+          description: Событие обработано
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Event processed successfully"
+                  timestamp:
+                    type: string
+                    format: date-time
+        '400':
+          description: Некорректные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /telegram/callback:
+    post:
+      tags:
+        - Telegram
+      summary: Обработка callback запросов
+      description: Обрабатывает callback запросы от Telegram Bot
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramCallback'
+      responses:
+        '200':
+          description: Callback обработан
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  response:
+                    type: object
+                    properties:
+                      text:
+                        type: string
+                        description: Текст ответа
+                      keyboard:
+                        type: array
+                        description: Клавиатура ответа
+                        items:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              text:
+                                type: string
+                              callback_data:
+                                type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  # Analytics endpoints
+  /analytics/dashboard:
+    get:
+      tags:
+        - Analytics
+      summary: Получение данных для дашборда
+      description: Возвращает агрегированные данные для главного дашборда
+      responses:
+        '200':
+          description: Данные дашборда
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      total_users:
+                        type: integer
+                        description: Общее количество пользователей
+                      active_users:
+                        type: integer
+                        description: Количество активных пользователей
+                      total_events:
+                        type: integer
+                        description: Общее количество событий
+                      total_purchases:
+                        type: integer
+                        description: Общее количество покупок
+                      revenue:
+                        type: number
+                        description: Общий доход
+                      conversion_rate:
+                        type: number
+                        description: Конверсия в покупки
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /analytics/users/{user_id}/metrics:
+    get:
+      tags:
+        - Analytics
+      summary: Получение метрик пользователя
+      description: Возвращает аналитические метрики для конкретного пользователя
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: ID пользователя
+          schema:
+            type: integer
+        - name: period
+          in: query
+          description: Период анализа
+          schema:
+            type: string
+            enum: [day, week, month, year]
+            default: month
+      responses:
+        '200':
+          description: Метрики пользователя
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/UserMetrics'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT токен в заголовке Authorization
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API ключ для Telegram Bot
+
+  schemas:
+    User:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          description: Уникальный ID пользователя
+          example: 123
+        telegram_id:
+          type: integer
+          description: Telegram ID пользователя
+          example: 987654321
+        first_name:
+          type: string
+          description: Имя пользователя
+          example: "John"
+        last_name:
+          type: string
+          description: Фамилия пользователя
+          example: "Doe"
+        username:
+          type: string
+          description: Имя пользователя в Telegram
+          example: "john_doe"
+        registration_date:
+          type: string
+          format: date-time
+          description: Дата регистрации
+          example: "2023-01-01T12:00:00Z"
+        profile_data:
+          type: object
+          description: Дополнительные данные профиля
+          additionalProperties: true
+        is_active:
+          type: boolean
+          description: Активен ли пользователь
+          example: true
+        last_activity:
+          type: string
+          format: date-time
+          description: Последняя активность
+          example: "2023-01-15T14:30:00Z"
+
+    CreateUserRequest:
+      type: object
+      required:
+        - telegram_id
+        - first_name
+      properties:
+        telegram_id:
+          type: integer
+          description: Telegram ID пользователя
+          example: 987654321
+        first_name:
+          type: string
+          description: Имя пользователя
+          example: "John"
+        last_name:
+          type: string
+          description: Фамилия пользователя
+          example: "Doe"
+        username:
+          type: string
+          description: Имя пользователя в Telegram
+          example: "john_doe"
+        profile_data:
+          type: object
+          description: Дополнительные данные профиля
+          additionalProperties: true
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        first_name:
+          type: string
+          description: Имя пользователя
+          example: "John"
+        last_name:
+          type: string
+          description: Фамилия пользователя
+          example: "Doe"
+        username:
+          type: string
+          description: Имя пользователя в Telegram
+          example: "john_doe"
+        profile_data:
+          type: object
+          description: Дополнительные данные профиля
+          additionalProperties: true
+        is_active:
+          type: boolean
+          description: Активен ли пользователь
+          example: true
+
+    Event:
+      type: object
+      properties:
+        event_id:
+          type: integer
+          description: Уникальный ID события
+          example: 456
+        user_id:
+          type: integer
+          description: ID пользователя
+          example: 123
+        product_id:
+          type: integer
+          description: ID продукта
+          example: 789
+        event_type:
+          type: string
+          enum: [view, purchase, add_to_cart, remove_from_cart, search, bot_command]
+          description: Тип события
+          example: "purchase"
+        event_timestamp:
+          type: string
+          format: date-time
+          description: Время события
+          example: "2023-01-15T14:30:00Z"
+        properties:
+          type: object
+          description: Дополнительные свойства события
+          additionalProperties: true
+          example:
+            amount: 1500
+            currency: "RUB"
+
+    CreateEventRequest:
+      type: object
+      required:
+        - user_id
+        - event_type
+      properties:
+        user_id:
+          type: integer
+          description: ID пользователя
+          example: 123
+        product_id:
+          type: integer
+          description: ID продукта
+          example: 789
+        event_type:
+          type: string
+          enum: [view, purchase, add_to_cart, remove_from_cart, search, bot_command]
+          description: Тип события
+          example: "purchase"
+        event_timestamp:
+          type: string
+          format: date-time
+          description: Время события (по умолчанию текущее время)
+          example: "2023-01-15T14:30:00Z"
+        properties:
+          type: object
+          description: Дополнительные свойства события
+          additionalProperties: true
+
+    TelegramEvent:
+      type: object
+      required:
+        - user_id
+        - telegram_id
+        - event_type
+      properties:
+        user_id:
+          type: integer
+          description: ID пользователя
+          example: 123
+        telegram_id:
+          type: integer
+          description: Telegram ID пользователя
+          example: 987654321
+        first_name:
+          type: string
+          description: Имя пользователя
+          example: "John"
+        last_name:
+          type: string
+          description: Фамилия пользователя
+          example: "Doe"
+        username:
+          type: string
+          description: Имя пользователя в Telegram
+          example: "john_doe"
+        event_type:
+          type: string
+          enum: [bot_command, message, callback_query]
+          description: Тип события Telegram
+          example: "bot_command"
+        event_timestamp:
+          type: string
+          format: date-time
+          description: Время события
+          example: "2023-01-15T14:30:00Z"
+        properties:
+          type: object
+          description: Дополнительные свойства события
+          additionalProperties: true
+          example:
+            command: "/start"
+            message_id: 123
+
+    TelegramCallback:
+      type: object
+      required:
+        - user_id
+        - telegram_id
+        - callback_data
+      properties:
+        user_id:
+          type: integer
+          description: ID пользователя
+          example: 123
+        telegram_id:
+          type: integer
+          description: Telegram ID пользователя
+          example: 987654321
+        callback_data:
+          type: string
+          description: Данные callback
+          example: "recommendations_123"
+        message_id:
+          type: integer
+          description: ID сообщения
+          example: 456
+        timestamp:
+          type: string
+          format: date-time
+          description: Время callback
+          example: "2023-01-15T14:30:00Z"
+
+    UserMetrics:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          description: ID пользователя
+          example: 123
+        total_events:
+          type: integer
+          description: Общее количество событий
+          example: 45
+        total_purchases:
+          type: integer
+          description: Количество покупок
+          example: 3
+        total_spent:
+          type: number
+          description: Общая сумма потраченная
+          example: 4500.00
+        avg_session_duration:
+          type: number
+          description: Средняя длительность сессии (секунды)
+          example: 180.5
+        last_activity:
+          type: string
+          format: date-time
+          description: Последняя активность
+          example: "2023-01-15T14:30:00Z"
+        segment_id:
+          type: integer
+          description: ID сегмента пользователя
+          example: 2
+        ltv:
+          type: number
+          description: Lifetime Value
+          example: 2500.00
+        churn_probability:
+          type: number
+          description: Вероятность оттока
+          example: 0.15
+        purchase_probability_30d:
+          type: number
+          description: Вероятность покупки в ближайшие 30 дней
+          example: 0.65
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          description: Текущая страница
+          example: 1
+        limit:
+          type: integer
+          description: Количество элементов на странице
+          example: 20
+        total:
+          type: integer
+          description: Общее количество элементов
+          example: 150
+        pages:
+          type: integer
+          description: Общее количество страниц
+          example: 8
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Описание ошибки
+          example: "Validation failed"
+        details:
+          type: object
+          description: Детали ошибки
+          additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+          description: Время возникновения ошибки
