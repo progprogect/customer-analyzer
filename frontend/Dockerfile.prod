@@ -1,0 +1,71 @@
+# Production Dockerfile для Frontend
+FROM node:18-alpine AS base
+
+# Устанавливаем системные зависимости
+RUN apk add --no-cache \
+    dumb-init \
+    && addgroup -g 1001 -S nodejs \
+    && adduser -S nodejs -u 1001
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Копируем package.json и package-lock.json
+COPY package*.json ./
+
+# Устанавливаем зависимости
+RUN npm ci && npm cache clean --force
+
+# Копируем исходный код
+COPY --chown=nodejs:nodejs . .
+
+# Собираем приложение
+RUN npm run build
+
+# Production stage с Nginx
+FROM nginx:alpine AS production
+
+# Устанавливаем системные зависимости
+RUN apk add --no-cache \
+    curl \
+    dumb-init
+
+# Копируем собранное приложение
+COPY --from=base /app/build /usr/share/nginx/html
+
+# Копируем конфигурацию Nginx
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Создаем пользователя для Nginx
+RUN addgroup -g 1001 -S nginx && \
+    adduser -S nginx -u 1001 -G nginx
+
+# Настраиваем права доступа
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
+    chown -R nginx:nginx /var/cache/nginx && \
+    chown -R nginx:nginx /var/log/nginx && \
+    chown -R nginx:nginx /etc/nginx/conf.d
+
+# Создаем директории для логов
+RUN mkdir -p /var/log/nginx && \
+    touch /var/log/nginx/access.log && \
+    touch /var/log/nginx/error.log && \
+    chown -R nginx:nginx /var/log/nginx
+
+# Настраиваем переменные окружения
+ENV NGINX_WORKER_PROCESSES=auto
+ENV NGINX_WORKER_CONNECTIONS=1024
+
+# Открываем порт
+EXPOSE 80
+
+# Добавляем health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:80/health || exit 1
+
+# Переключаемся на непривилегированного пользователя
+USER nginx
+
+# Запускаем Nginx
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["nginx", "-g", "daemon off;"]
