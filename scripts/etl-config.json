@@ -1,0 +1,26 @@
+{
+  "default": {
+    "inputDir": "./data/input",
+    "outputDir": "./data/output",
+    "batchSize": 1000,
+    "validateData": true,
+    "skipDuplicates": true,
+    "logLevel": "info"
+  },
+  "large_dataset": {
+    "inputDir": "./data/large_input",
+    "outputDir": "./data/large_output",
+    "batchSize": 5000,
+    "validateData": true,
+    "skipDuplicates": true,
+    "logLevel": "info"
+  },
+  "fast_mode": {
+    "inputDir": "./data/input",
+    "outputDir": "./data/output",
+    "batchSize": 2000,
+    "validateData": false,
+    "skipDuplicates": false,
+    "logLevel": "warn"
+  }
+}
