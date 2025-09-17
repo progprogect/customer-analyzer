@@ -1,0 +1,69 @@
+# Docker Compose override для локальной разработки
+# Этот файл автоматически подключается к docker-compose.yml
+
+version: '3.8'
+
+services:
+  postgres:
+    # Дополнительные настройки для разработки
+    environment:
+      POSTGRES_DB: customer_analyzer
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+      - ./database/backups:/backups
+    ports:
+      - "5432:5432"
+    # Настройки для разработки
+    command: >
+      postgres
+      -c log_statement=all
+      -c log_min_duration_statement=1000
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d customer_analyzer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    # Настройки Redis для разработки
+    command: redis-server --appendonly yes --loglevel debug
+    volumes:
+      - redis_data:/data
+
+  # Добавляем pgAdmin для удобства работы с БД
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: customer-analyzer-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@customer-analyzer.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - customer-analyzer-network
+
+  # Добавляем Redis Commander для мониторинга Redis
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: customer-analyzer-redis-commander
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - customer-analyzer-network
+
+volumes:
+  pgadmin_data:
