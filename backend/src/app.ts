@@ -50,6 +50,10 @@ export function createApp(): express.Application {
   // Маршруты
   app.use('/health', healthRouter);
   app.use('/api/health', healthRouter);
+  
+  // Telegram API маршруты
+  const telegramRouter = require('@/routes/telegram').default;
+  app.use('/api/telegram', telegramRouter);
 
   // Корневой маршрут
   app.get('/', (req, res) => {
