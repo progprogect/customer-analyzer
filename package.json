@@ -1,0 +1,80 @@
+{
+  "name": "customer-analyzer",
+  "version": "1.0.0",
+  "description": "Система аналитики и персонализированных рекомендаций",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend",
+    "telegram-bot"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:bot\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm start",
+    "dev:bot": "cd telegram-bot && npm run dev",
+    "dev:ml": "cd ml-services && python app.py",
+    "build": "npm run build:backend && npm run build:frontend",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "cd backend && npm test",
+    "test:frontend": "cd frontend && npm test",
+    "test:ml": "cd ml-services && pytest",
+    "lint": "npm run lint:backend && npm run lint:frontend",
+    "lint:backend": "cd backend && npm run lint",
+    "lint:frontend": "cd frontend && npm run lint",
+    "format": "npm run format:backend && npm run format:frontend",
+    "format:backend": "cd backend && npm run format",
+    "format:frontend": "cd frontend && npm run format",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:build": "docker-compose build",
+    "db:migrate": "cd backend && npm run migrate",
+    "db:seed": "cd backend && npm run seed",
+    "setup": "npm install && npm run setup:backend && npm run setup:frontend && npm run setup:bot",
+    "setup:backend": "cd backend && npm install",
+    "setup:frontend": "cd frontend && npm install",
+    "setup:bot": "cd telegram-bot && npm install",
+    "clean": "npm run clean:node_modules && npm run clean:dist",
+    "clean:node_modules": "find . -name 'node_modules' -type d -prune -exec rm -rf {} +",
+    "clean:dist": "find . -name 'dist' -type d -prune -exec rm -rf {} +"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "husky": "^8.0.3",
+    "lint-staged": "^14.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/progprogect/customer-analyzer.git"
+  },
+  "keywords": [
+    "analytics",
+    "recommendations",
+    "machine-learning",
+    "telegram-bot",
+    "dashboard"
+  ],
+  "author": "Customer Analyzer Team",
+  "license": "MIT",
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}
