@@ -1,69 +1,58 @@
 import dotenv from 'dotenv';
-import { AppConfig, DatabaseConfig } from '@/types';
+import path from 'path';
 
-// Загрузка переменных окружения
-dotenv.config();
+// Загружаем .env файл из корневой директории backend
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-/**
- * Валидация обязательных переменных окружения
- */
-function validateEnv() {
-  const required = [
-    'POSTGRES_HOST',
-    'POSTGRES_PORT',
-    'POSTGRES_DB',
-    'POSTGRES_USER',
-    'POSTGRES_PASSWORD',
-    'JWT_SECRET'
-  ];
+export const config = {
+  // Database
+  database: {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432'),
+    name: process.env.DB_NAME || 'customer_analyzer',
+    user: process.env.DB_USER || 'app_user',
+    password: process.env.DB_PASSWORD || 'app_password',
+    ssl: process.env.NODE_ENV === 'production',
+  },
 
-  const missing = required.filter(key => !process.env[key]);
-  
-  if (missing.length > 0) {
-    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
-  }
-}
+  // Redis
+  redis: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379'),
+    password: process.env.REDIS_PASSWORD || '',
+  },
 
-/**
- * Конфигурация базы данных
- */
-const databaseConfig: DatabaseConfig = {
-  host: process.env.POSTGRES_HOST!,
-  port: parseInt(process.env.POSTGRES_PORT!, 10),
-  database: process.env.POSTGRES_DB!,
-  user: process.env.POSTGRES_USER!,
-  password: process.env.POSTGRES_PASSWORD!,
-  ssl: process.env.NODE_ENV === 'production',
-  connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '5000', 10),
-  idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
-  max: parseInt(process.env.DB_MAX_CONNECTIONS || '10', 10)
+  // JWT
+  jwt: {
+    secret: process.env.JWT_SECRET || 'development_secret',
+    expiresIn: process.env.JWT_EXPIRES_IN || '24h',
+  },
+
+  // Telegram Bot
+  telegram: {
+    token: process.env.TELEGRAM_BOT_TOKEN || '',
+    username: process.env.TELEGRAM_BOT_USERNAME || '',
+  },
+
+  // ML Services
+  ml: {
+    apiUrl: process.env.ML_API_URL || 'http://localhost:8000',
+    timeout: parseInt(process.env.ML_API_TIMEOUT || '30000'),
+  },
+
+  // Server
+  server: {
+    port: parseInt(process.env.PORT || '3001'),
+    host: process.env.HOST || 'localhost',
+  },
+
+  // Logging
+  logging: {
+    level: process.env.LOG_LEVEL || 'info',
+  },
+
+  // Environment
+  env: process.env.NODE_ENV || 'development',
+  isDevelopment: process.env.NODE_ENV === 'development',
+  isProduction: process.env.NODE_ENV === 'production',
 };
-
-/**
- * Основная конфигурация приложения
- */
-export const config: AppConfig = {
-  port: parseInt(process.env.API_PORT || '8000', 10),
-  nodeEnv: process.env.NODE_ENV || 'development',
-  jwtSecret: process.env.JWT_SECRET!,
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
-  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-  logLevel: process.env.LOG_LEVEL || 'info',
-  database: databaseConfig
-};
-
-/**
- * Инициализация конфигурации
- */
-export function initializeConfig(): AppConfig {
-  try {
-    validateEnv();
-    console.log('✅ Configuration loaded successfully');
-    return config;
-  } catch (error) {
-    console.error('❌ Configuration error:', error);
-    process.exit(1);
-  }
-}
-
-export default config;

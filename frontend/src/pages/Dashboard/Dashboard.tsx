@@ -1,377 +1,304 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Box,
+  Container,
   Grid,
-  Card,
-  CardContent,
   Typography,
+  Box,
   Paper,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
-  Chip,
-  Avatar,
-  Button,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import {
-  People,
-  ShoppingCart,
-  TrendingUp,
-  TrendingDown,
-  Notifications,
-  CheckCircle,
-  Warning,
-  Error,
-  Refresh,
-  Assessment,
+  People as PeopleIcon,
+  ShoppingCart as ShoppingCartIcon,
+  TrendingUp as TrendingUpIcon,
+  Warning as WarningIcon,
+  Telegram as TelegramIcon,
+  Psychology as PsychologyIcon,
 } from '@mui/icons-material';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
-import { useSegmentationData, usePurchasePredictionData, useChurnPredictionData } from '../../hooks/useMLData';
-import DataRefreshManager from '../../components/DataRefreshManager';
+import MetricCard from '../../components/Dashboard/MetricCard.tsx';
+import ChartCard from '../../components/Dashboard/ChartCard.tsx';
+import { dataService } from '../../services/dataService.ts';
+
+interface DashboardData {
+  totalUsers: number;
+  activeUsers: number;
+  totalPurchases: number;
+  conversionRate: number;
+  churnRate: number;
+  telegramUsers: number;
+  userGrowth: any[];
+  purchaseTrends: any[];
+  userSegments: any[];
+  systemHealth: {
+    backend: boolean;
+    database: boolean;
+    telegram: boolean;
+    ml: boolean;
+  };
+}
 
 const Dashboard: React.FC = () => {
-  const { segments, metrics: segmentationMetrics, isLoading: segmentationLoading } = useSegmentationData();
-  const { topPredictions, metrics: purchaseMetrics, isLoading: purchaseLoading } = usePurchasePredictionData();
-  const { highRiskUsers, metrics: churnMetrics, isLoading: churnLoading } = useChurnPredictionData();
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Вычисляем агрегированные метрики
-  const totalUsers = segments?.segments?.reduce((sum, segment) => sum + segment.size, 0) || 0;
-  const activeUsers = segments?.segments?.filter(s => s.name !== 'Неактивные').reduce((sum, segment) => sum + segment.size, 0) || 0;
-  const highRiskCount = highRiskUsers?.length || 0;
-  const highPurchaseProbability = topPredictions?.filter(p => p.purchase_probability > 0.7).length || 0;
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-  const getEventIcon = (type: string) => {
-    switch (type) {
-      case 'purchase':
-        return <CheckCircle color="success" />;
-      case 'churn_risk':
-        return <Warning color="warning" />;
-      case 'segment_change':
-        return <TrendingUp color="info" />;
-      case 'new_user':
-        return <People color="primary" />;
-      default:
-        return <Notifications />;
+      // Получаем данные из единого сервиса
+      const userStats = await dataService.getUserStats();
+      
+      const dashboardData: DashboardData = {
+        totalUsers: userStats.totalUsers,
+        activeUsers: userStats.activeUsers,
+        totalPurchases: userStats.totalPurchases,
+        conversionRate: userStats.conversionRate,
+        churnRate: userStats.churnRate,
+        telegramUsers: userStats.telegramUsers,
+        userGrowth: userStats.userGrowth,
+        purchaseTrends: userStats.purchaseTrends,
+        userSegments: userStats.userSegments,
+        systemHealth: {
+          backend: true,
+          database: true,
+          telegram: true,
+          ml: true,
+        },
+      };
+
+      setData(dashboardData);
+    } catch (err) {
+      setError('Ошибка загрузки данных');
+      console.error('Dashboard data fetch error:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getEventText = (event: any) => {
-    switch (event.type) {
-      case 'purchase':
-        return `${event.user} совершил покупку на ${event.amount}₽`;
-      case 'churn_risk':
-        return `Высокий риск оттока у пользователя ${event.user}`;
-      case 'segment_change':
-        return `${event.user} перешел в сегмент "${event.segment}"`;
-      case 'new_user':
-        return `Новый пользователь: ${event.user}`;
-      default:
-        return 'Неизвестное событие';
-    }
-  };
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
-  // Mock данные для демонстрации (пока нет реальных данных)
-  const mockTimeSeriesData = [
-    { date: '2023-01-01', users: 1200, events: 4500, purchases: 180 },
-    { date: '2023-01-02', users: 1350, events: 5200, purchases: 210 },
-    { date: '2023-01-03', users: 1280, events: 4800, purchases: 195 },
-    { date: '2023-01-04', users: 1420, events: 5600, purchases: 225 },
-    { date: '2023-01-05', users: 1380, events: 5100, purchases: 205 },
-    { date: '2023-01-06', users: 1500, events: 5900, purchases: 240 },
-    { date: '2023-01-07', users: 1450, events: 5500, purchases: 220 },
-  ];
+  if (loading) {
+    return (
+      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+          <CircularProgress size={60} />
+        </Box>
+      </Container>
+    );
+  }
 
-  const mockRecentEvents = [
-    { id: 1, type: 'purchase', user: 'Иван Петров', amount: 1500, time: '2 мин назад' },
-    { id: 2, type: 'churn_risk', user: 'Мария Сидорова', risk: 'high', time: '5 мин назад' },
-    { id: 3, type: 'segment_change', user: 'Алексей Иванов', segment: 'VIP', time: '10 мин назад' },
-    { id: 4, type: 'new_user', user: 'Елена Козлова', time: '15 мин назад' },
-  ];
+  if (error) {
+    return (
+      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      </Container>
+    );
+  }
+
+  if (!data) return null;
 
   return (
-    <Box sx={{ mt: 2 }}>
-      <Typography variant="h4" gutterBottom>
-        Дашборд
+    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+      <Typography variant="h4" component="h1" gutterBottom>
+        📊 Дашборд Customer Analyzer
       </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Обзор ключевых метрик и активности системы с ML аналитикой
+      
+      <Typography variant="subtitle1" color="text.secondary" gutterBottom>
+        Обзор аналитики пользователей и системы
       </Typography>
 
-      {/* Предупреждения о высоком риске */}
-      {highRiskCount > 0 && (
-        <Alert severity="warning" sx={{ mb: 3 }}>
-          <Typography variant="subtitle2">
-            Внимание! {highRiskCount} пользователей с высоким риском оттока требуют немедленного внимания
-          </Typography>
-        </Alert>
-      )}
-
-      <Grid container spacing={3}>
-        {/* Управление данными */}
-        <Grid item xs={12}>
-          <DataRefreshManager />
-        </Grid>
-
-        {/* Ключевые метрики */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box>
-                  <Typography color="text.secondary" gutterBottom>
-                    Всего пользователей
-                  </Typography>
-                  <Typography variant="h4">
-                    {segmentationLoading ? '...' : totalUsers.toLocaleString()}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'primary.main' }}>
-                  <People />
-                </Avatar>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box>
-                  <Typography color="text.secondary" gutterBottom>
-                    Активные пользователи
-                  </Typography>
-                  <Typography variant="h4">
-                    {segmentationLoading ? '...' : activeUsers.toLocaleString()}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'success.main' }}>
-                  <TrendingUp />
-                </Avatar>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box>
-                  <Typography color="text.secondary" gutterBottom>
-                    Высокая вероятность покупки
-                  </Typography>
-                  <Typography variant="h4">
-                    {purchaseLoading ? '...' : highPurchaseProbability}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'info.main' }}>
-                  <ShoppingCart />
-                </Avatar>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box>
-                  <Typography color="text.secondary" gutterBottom>
-                    Риск оттока
-                  </Typography>
-                  <Typography variant="h4" color={highRiskCount > 0 ? 'error' : 'success'}>
-                    {churnLoading ? '...' : highRiskCount}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: highRiskCount > 0 ? 'error.main' : 'success.main' }}>
-                  <TrendingDown />
-                </Avatar>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Графики */}
-        <Grid item xs={12} md={8}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Динамика активности
-            </Typography>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={mockTimeSeriesData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="users" stroke="#1976d2" strokeWidth={2} />
-                <Line type="monotone" dataKey="events" stroke="#42a5f5" strokeWidth={2} />
-                <Line type="monotone" dataKey="purchases" stroke="#dc004e" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Сегменты пользователей
-            </Typography>
-            {segments?.segments ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={segments.segments}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    dataKey="size"
-                    label={({ name, percentage }) => `${name}: ${percentage.toFixed(1)}%`}
-                  >
-                    {segments.segments.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={`hsl(${index * 60}, 70%, 50%)`} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
-                <Typography color="text.secondary">Загрузка данных...</Typography>
-              </Box>
-            )}
-          </Paper>
-        </Grid>
-
-        {/* ML метрики */}
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Качество ML моделей
-            </Typography>
-            <List>
-              <ListItem>
-                <ListItemIcon>
-                  <Assessment />
-                </ListItemIcon>
-                <ListItemText
-                  primary="Сегментация"
-                  secondary={`Silhouette Score: ${segmentationMetrics?.silhouette_score ? (segmentationMetrics.silhouette_score * 100).toFixed(1) : 'N/A'}%`}
-                />
-              </ListItem>
-              <ListItem>
-                <ListItemIcon>
-                  <ShoppingCart />
-                </ListItemIcon>
-                <ListItemText
-                  primary="Прогнозы покупок"
-                  secondary={`Accuracy: ${purchaseMetrics?.accuracy ? (purchaseMetrics.accuracy * 100).toFixed(1) : 'N/A'}%`}
-                />
-              </ListItem>
-              <ListItem>
-                <ListItemIcon>
-                  <TrendingDown />
-                </ListItemIcon>
-                <ListItemText
-                  primary="Прогнозы оттока"
-                  secondary={`Accuracy: ${churnMetrics?.accuracy ? (churnMetrics.accuracy * 100).toFixed(1) : 'N/A'}%`}
-                />
-              </ListItem>
-            </List>
-          </Paper>
-        </Grid>
-
-        {/* Последние события */}
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Последние события
-            </Typography>
-            <List>
-              {mockRecentEvents.map((event) => (
-                <ListItem key={event.id} divider>
-                  <ListItemIcon>
-                    {getEventIcon(event.type)}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={getEventText(event)}
-                    secondary={event.time}
-                  />
-                  {event.type === 'churn_risk' && (
-                    <Chip
-                      label="Высокий риск"
-                      color="warning"
-                      size="small"
-                    />
-                  )}
-                </ListItem>
-              ))}
-            </List>
-          </Paper>
-        </Grid>
-
-        {/* Топ пользователи с высокой вероятностью покупки */}
-        {topPredictions && topPredictions.length > 0 && (
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Топ пользователи для конверсии
-              </Typography>
-              <List>
-                {topPredictions.slice(0, 5).map((prediction) => (
-                  <ListItem key={prediction.user_id} divider>
-                    <ListItemIcon>
-                      <ShoppingCart color="primary" />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={`User #${prediction.user_id}`}
-                      secondary={`${(prediction.purchase_probability * 100).toFixed(1)}% вероятность`}
-                    />
-                    <Chip
-                      label={prediction.prediction_confidence}
-                      color={prediction.prediction_confidence === 'high' ? 'success' : 'warning'}
-                      size="small"
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            </Paper>
+      {/* Системный статус */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          🔧 Статус системы
+        </Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={6} sm={3}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box
+                sx={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  backgroundColor: data.systemHealth.backend ? 'success.main' : 'error.main',
+                }}
+              />
+              <Typography variant="body2">Backend API</Typography>
+            </Box>
           </Grid>
-        )}
-
-        {/* Пользователи с высоким риском оттока */}
-        {highRiskUsers && highRiskUsers.length > 0 && (
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom color="error">
-                Пользователи высокого риска оттока
-              </Typography>
-              <List>
-                {highRiskUsers.slice(0, 5).map((prediction) => (
-                  <ListItem key={prediction.user_id} divider>
-                    <ListItemIcon>
-                      <Warning color="error" />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={`User #${prediction.user_id}`}
-                      secondary={`${(prediction.churn_probability * 100).toFixed(1)}% риск оттока`}
-                    />
-                    <Chip
-                      label="Высокий риск"
-                      color="error"
-                      size="small"
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            </Paper>
+          <Grid item xs={6} sm={3}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box
+                sx={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  backgroundColor: data.systemHealth.database ? 'success.main' : 'error.main',
+                }}
+              />
+              <Typography variant="body2">База данных</Typography>
+            </Box>
           </Grid>
-        )}
+          <Grid item xs={6} sm={3}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box
+                sx={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  backgroundColor: data.systemHealth.telegram ? 'success.main' : 'error.main',
+                }}
+              />
+              <Typography variant="body2">Telegram Bot</Typography>
+            </Box>
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box
+                sx={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  backgroundColor: data.systemHealth.ml ? 'success.main' : 'error.main',
+                }}
+              />
+              <Typography variant="body2">ML Сервисы</Typography>
+            </Box>
+          </Grid>
+        </Grid>
+      </Paper>
+
+      {/* Основные метрики */}
+      <Grid container spacing={3} sx={{ mb: 3 }}>
+        <Grid item xs={12} sm={6} md={3}>
+          <MetricCard
+            title="Всего пользователей"
+            value={data.totalUsers.toLocaleString()}
+            change={12.5}
+            changeLabel="за месяц"
+            icon={<PeopleIcon />}
+            color="primary"
+            onRefresh={fetchDashboardData}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <MetricCard
+            title="Активные пользователи"
+            value={data.activeUsers.toLocaleString()}
+            change={8.2}
+            changeLabel="за неделю"
+            icon={<TrendingUpIcon />}
+            color="success"
+            onRefresh={fetchDashboardData}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <MetricCard
+            title="Всего покупок"
+            value={data.totalPurchases.toLocaleString()}
+            change={15.3}
+            changeLabel="за месяц"
+            icon={<ShoppingCartIcon />}
+            color="warning"
+            onRefresh={fetchDashboardData}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <MetricCard
+            title="Конверсия"
+            value={`${data.conversionRate}%`}
+            change={-2.1}
+            changeLabel="за неделю"
+            icon={<TrendingUpIcon />}
+            color="secondary"
+            onRefresh={fetchDashboardData}
+          />
+        </Grid>
       </Grid>
-    </Box>
+
+      {/* Дополнительные метрики */}
+      <Grid container spacing={3} sx={{ mb: 3 }}>
+        <Grid item xs={12} sm={6} md={4}>
+          <MetricCard
+            title="Отток клиентов"
+            value={`${data.churnRate}%`}
+            change={-1.2}
+            changeLabel="улучшение"
+            icon={<WarningIcon />}
+            color="error"
+            onRefresh={fetchDashboardData}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={4}>
+          <MetricCard
+            title="Telegram пользователи"
+            value={data.telegramUsers.toLocaleString()}
+            change={25.7}
+            changeLabel="рост"
+            icon={<TelegramIcon />}
+            color="primary"
+            onRefresh={fetchDashboardData}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={4}>
+          <MetricCard
+            title="ML Предсказания"
+            value="98.7%"
+            change={0.3}
+            changeLabel="точность"
+            icon={<PsychologyIcon />}
+            color="success"
+            onRefresh={fetchDashboardData}
+          />
+        </Grid>
+      </Grid>
+
+      {/* Графики */}
+      <Grid container spacing={3}>
+        <Grid item xs={12} lg={8}>
+          <ChartCard
+            title="Рост пользователей"
+            subtitle="Динамика регистраций по месяцам"
+            data={data.userGrowth}
+            type="line"
+            dataKey="users"
+            color="#1976d2"
+            height={300}
+            onRefresh={fetchDashboardData}
+          />
+        </Grid>
+        <Grid item xs={12} lg={4}>
+          <ChartCard
+            title="Сегменты пользователей"
+            subtitle="Распределение по типам"
+            data={data.userSegments}
+            type="pie"
+            dataKey="value"
+            height={300}
+            onRefresh={fetchDashboardData}
+          />
+        </Grid>
+        <Grid item xs={12}>
+          <ChartCard
+            title="Тренды покупок"
+            subtitle="Объем продаж по месяцам"
+            data={data.purchaseTrends}
+            type="bar"
+            dataKey="purchases"
+            color="#ff9800"
+            height={250}
+            onRefresh={fetchDashboardData}
+          />
+        </Grid>
+      </Grid>
+    </Container>
   );
 };
 

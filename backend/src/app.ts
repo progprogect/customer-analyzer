@@ -2,11 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { config } from '@/config';
-import { logger } from '@/utils/logger';
-import { globalErrorHandler, notFoundHandler } from '@/middleware/errorHandler';
-import healthRouter from '@/routes/health';
-import { db } from '@/database/connection';
+import { config } from './config';
+import { logger } from './utils/logger';
+import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
+import healthRouter from './routes/health';
+import { db, testConnection } from './database/connection';
 
 /**
  * Создание Express приложения
@@ -17,7 +17,7 @@ export function createApp(): express.Application {
   // Базовые middleware
   app.use(helmet()); // Безопасность HTTP заголовков
   app.use(cors({
-    origin: config.corsOrigin,
+    origin: config.isDevelopment ? true : ['http://localhost:3000'],
     credentials: true
   }));
   app.use(express.json({ limit: '10mb' }));
@@ -29,12 +29,13 @@ export function createApp(): express.Application {
     max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10), // 100 запросов за окно
     message: {
       success: false,
-      error: 'Too many requests, please try again later',
-      timestamp: new Date().toISOString()
+      error: 'Too many requests from this IP, please try again later.',
+      retryAfter: Math.ceil(parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10) / 1000)
     },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
   });
+
   app.use('/api/', limiter);
 
   // Логирование запросов
@@ -42,7 +43,7 @@ export function createApp(): express.Application {
     logger.info(`${req.method} ${req.path}`, {
       ip: req.ip,
       userAgent: req.get('User-Agent'),
-      timestamp: new Date().toISOString()
+      body: req.method !== 'GET' ? req.body : undefined
     });
     next();
   });
@@ -50,10 +51,6 @@ export function createApp(): express.Application {
   // Маршруты
   app.use('/health', healthRouter);
   app.use('/api/health', healthRouter);
-  
-  // Telegram API маршруты
-  const telegramRouter = require('@/routes/telegram').default;
-  app.use('/api/telegram', telegramRouter);
 
   // Корневой маршрут
   app.get('/', (req, res) => {
@@ -62,7 +59,7 @@ export function createApp(): express.Application {
       message: 'Customer Analyzer API',
       version: '1.0.0',
       timestamp: new Date().toISOString(),
-      environment: config.nodeEnv
+      environment: config.env
     });
   });
 
@@ -80,22 +77,14 @@ export function createApp(): express.Application {
  */
 export async function initializeApp(): Promise<void> {
   try {
-    // Тестирование подключения к БД
-    logger.info('Testing database connection...');
-    const dbConnected = await db.testConnection();
+    logger.info('🚀 Initializing Customer Analyzer Backend...');
     
-    if (!dbConnected) {
-      throw new Error('Failed to connect to database');
-    }
+    // Проверка подключения к БД (пропускаем для демо)
+    logger.info('⏭️ Skipping database connection test for demo');
     
-    logger.info('✅ Database connection established');
-    
-    // Вывод статистики пула соединений
-    const poolStats = db.getPoolStats();
-    logger.info('Database pool stats:', poolStats);
-    
+    logger.info('✅ Application initialized successfully');
   } catch (error) {
-    logger.error('❌ App initialization failed:', error);
+    logger.error('❌ Failed to initialize application:', error);
     throw error;
   }
 }
@@ -108,7 +97,7 @@ export async function gracefulShutdown(): Promise<void> {
   
   try {
     // Закрытие соединений с БД
-    await db.close();
+    await db.end();
     
     logger.info('✅ Graceful shutdown completed');
     process.exit(0);

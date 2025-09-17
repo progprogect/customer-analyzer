@@ -1,6 +1,6 @@
 import { createApp, initializeApp, gracefulShutdown } from './app';
-import { config } from '@/config';
-import { logger } from '@/utils/logger';
+import { config } from './config';
+import { logger } from './utils/logger';
 
 /**
  * Главная точка входа приложения
@@ -14,11 +14,11 @@ async function startServer(): Promise<void> {
     const app = createApp();
     
     // Запуск сервера
-    const server = app.listen(config.port, () => {
-      logger.info(`🚀 Server running on port ${config.port}`);
-      logger.info(`📊 Environment: ${config.nodeEnv}`);
-      logger.info(`🔗 Health check: http://localhost:${config.port}/health`);
-      logger.info(`📖 API docs: http://localhost:${config.port}/api-docs`);
+    const server = app.listen(config.server.port, () => {
+      logger.info(`🚀 Server running on port ${config.server.port}`);
+      logger.info(`📊 Environment: ${config.env}`);
+      logger.info(`🔗 Health check: http://localhost:${config.server.port}/health`);
+      logger.info(`📖 API docs: http://localhost:${config.server.port}/api-docs`);
     });
 
     // Обработка сигналов завершения
